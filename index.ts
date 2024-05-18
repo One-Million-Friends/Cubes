@@ -1,6 +1,6 @@
 import { BunRuntime } from '@effect/platform-bun'
 import chalk from 'chalk'
-import { ConfigProvider, Effect, pipe, Schedule } from 'effect'
+import { Config, ConfigProvider, Effect, pipe, Schedule } from 'effect'
 import { constVoid } from 'effect/Function'
 import { fmt, fmtProbability } from './game/fmt.ts'
 import { Telegram } from './telegram/client.ts'
@@ -18,13 +18,11 @@ const miner = Effect.gen(function* (_) {
 	const client = yield* _(Telegram)
 	const peerId = yield* _(client.getPeerId('cubesonthewater_bot'))
 
-	const webViewResultUrl = yield* _(
-		client.requestWebView({
-			url: 'https://www.thecubes.xyz/',
-			bot: peerId,
-			peer: peerId,
-		})
-	)
+	const webViewResultUrl = yield* client.requestWebView({
+		url: 'https://www.thecubes.xyz/',
+		bot: peerId,
+		peer: peerId,
+	})
 
 	const tgWebAppData = webViewResultUrl.searchParams.get('tgWebAppData')!
 	if (!tgWebAppData) {
@@ -51,8 +49,9 @@ const miner = Effect.gen(function* (_) {
 	})
 
 	const mine = Effect.gen(function* (_) {
-		if (state.energy < 100) {
-			if (state.drops < 50 && state.probability < 50) {
+		if (state.energy < 200) {
+			const threshold = yield* Config.number('GAME_BUY_ENERGY_CHANCE_THRESHOLD').pipe(Config.withDefault(55))
+			if (state.drops < 50 || state.probability < threshold) {
 				return
 			}
 
@@ -78,27 +77,26 @@ const miner = Effect.gen(function* (_) {
 			'|💧'.padEnd(4),
 			chalk.bold(`${state.drops}`.padEnd(4)),
 			chalk.bold[dropsDiff > 0 ? 'green' : 'red'](fmt(dropsDiff).padEnd(4)),
-			'|❓'.padEnd(4),
+			'|🎁'.padEnd(4),
 			chalk.bold(`${state.boxes}`.padEnd(4)),
 			chalk.bold[boxesDiff > 0 ? 'green' : 'red'](fmt(boxesDiff).padEnd(4))
 		)
 	})
 
-	yield* sync
+	const mineInterval = yield* Config.duration('GAME_MINE_INTERVAL').pipe(Config.withDefault('10 seconds'))
+	const syncInterval = yield* Config.duration('GAME_SYNC_INTERVAL').pipe(Config.withDefault('60 seconds'))
 
-	yield* Effect.all(
-		[
-			Effect.repeat(
-				mine,
-				Schedule.addDelay(Schedule.forever, () => '10 seconds')
-			),
-			Effect.repeat(
-				sync,
-				Schedule.addDelay(Schedule.forever, () => '60 seconds')
-			),
-		],
-		{ concurrency: 'unbounded' }
+	const miner = Effect.repeat(
+		mine,
+		Schedule.addDelay(Schedule.forever, () => mineInterval)
 	)
+
+	const syncer = Effect.repeat(
+		sync,
+		Schedule.addDelay(Schedule.forever, () => syncInterval)
+	)
+
+	yield* Effect.all([sync, miner, syncer], { concurrency: 'unbounded' })
 })
 
 const policy = Schedule.addDelay(Schedule.forever, () => '15 seconds')
@@ -106,7 +104,7 @@ const policy = Schedule.addDelay(Schedule.forever, () => '15 seconds')
 const program = Effect.match(miner, {
 	onSuccess: constVoid,
 	onFailure: (err) => {
-		console.error('‼️FAILED:', err._tag)
+		console.error(chalk.bold(new Date().toLocaleTimeString()), '‼️FAILED:', err._tag)
 	},
 })
 
