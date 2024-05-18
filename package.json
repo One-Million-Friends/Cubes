@@ -1,5 +1,5 @@
 {
-	"name": "@one-million-friends/tapswap",
+	"name": "@one-million-friends/cubes",
 	"module": "index.ts",
 	"type": "module",
 	"scripts": {

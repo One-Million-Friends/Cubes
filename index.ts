@@ -2,9 +2,9 @@ import { BunRuntime } from '@effect/platform-bun'
 import chalk from 'chalk'
 import { Config, ConfigProvider, Effect, pipe, Schedule } from 'effect'
 import { constVoid } from 'effect/Function'
+import { buy, collect, login, statistics } from './game/api.ts'
 import { fmt, fmtProbability } from './game/fmt.ts'
 import { Telegram } from './telegram/client.ts'
-import { login, collect, buy, statistics } from './game/api.ts'
 
 type State = {
 	token: string
@@ -96,7 +96,8 @@ const miner = Effect.gen(function* (_) {
 		Schedule.addDelay(Schedule.forever, () => syncInterval)
 	)
 
-	yield* Effect.all([sync, miner, syncer], { concurrency: 'unbounded' })
+	yield* sync
+	yield* Effect.all([miner, syncer], { concurrency: 'unbounded' })
 })
 
 const policy = Schedule.addDelay(Schedule.forever, () => '15 seconds')
